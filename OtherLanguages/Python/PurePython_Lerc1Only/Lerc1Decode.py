@@ -44,7 +44,7 @@ def dloop(xr, yr):
 
 # size is the number of bytes to read
 def decode_RLE(blob, offset, size):
-    'Unpack the RLE encoded chunk of size starting at offset in blob'
+    '''Unpack the RLE encoded chunk'''
     result = array.array('B')
     while size > 2:
         count = struct.unpack_from("<h", blob, offset)[0]
@@ -54,7 +54,7 @@ def decode_RLE(blob, offset, size):
             result.extend(struct.unpack_from("B", blob, offset)* -count)
             count = 1
         else:
-            result.extend(struct.unpack_from("B"* count, blob, offset))
+            result.extend(struct.unpack_from(str(count) + "B", blob, offset))
         offset += count
         size -= 2 + count
     if struct.unpack_from("<h", blob, offset)[0] != -32768:
@@ -62,7 +62,7 @@ def decode_RLE(blob, offset, size):
     return result
 
 def read_qval(blob, offset):
-    'Reads a block of packed integers, updates offset'
+    '''Read a block of packed integers'''
     # First byte holds the number of bits per value and the varint byte count
     # for the number of values
     nbits, = struct.unpack_from("B", blob, offset)
@@ -75,21 +75,22 @@ def read_qval(blob, offset):
     count, = struct.unpack_from(("<I", "<H", "B")[bc], blob, offset)
     offset += (4, 2, 1)[bc]
 
-    # Values are packed in low endian int values, but starting with MSbit
-    nint = (count * nbits + 7) / 32
-    values32 = struct.unpack_from("<" + "I"*nint, blob, offset)
+    # Values are packed in low endian int values, starting from high bit
+    nbytes = (count * nbits + 7) // 8
+    nint = nbytes // 4
+    values32 = struct.unpack_from("<" + str(nint) + "I", blob, offset)
     offset += nint * 4
 
     # If not all bytes of the last integer is used, they are not stored
     # But the used bytes are still from the most significan bit end
-    extra_bytes = ((count * nbits + 7) / 8) % 4
+    extra_bytes = nbytes - nint * 4
     if 0 != extra_bytes:
-        values8 = struct.unpack_from("B" * extra_bytes, blob, offset)
+        values8 = struct.unpack_from(str(extra_bytes) + "B", blob, offset)
         offset += extra_bytes
         v8 = 0
         for i in range(extra_bytes):
             v8 |= values8[i] << (8 * (i + 4 - extra_bytes))
-        values32 = values32 + (v8,)
+        values32 += (v8,)
 
     # Decode the integer array, values are always positive
     values = array.array("I", (0,)* count)
@@ -111,7 +112,7 @@ def read_qval(blob, offset):
 
 # Single block read/expand, returns the end offset
 def read_block(data, rx, ry, mask, Q, max_val, blob, offset):
-    'Read a lerc block into data, at bx,by of size tw,th, from blob at offset'
+    '''Decode a lerc block into the data array'''
     flags, = struct.unpack_from('B', blob, offset)
     offset += 1
     mf = flags >> 6  # Format of minimum
@@ -156,15 +157,15 @@ class bitmask(object):
         self.data = array.array('B', (val,) * sz) if data is None else data
 
     def at(self, x, y):
-        'query mask at x and y'
+        '''query mask at x and y'''
         l = y * self.w + x
-        return 0 != (self.data[l / 8] & (128 >> (l % 8)))
+        return 0 != (self.data[l // 8] & (128 >> (l % 8)))
 
 class lerc(object):
-    'Lerc codec'
+    '''Lerc codec'''
     def __init__(self, blob): # Only reads the header
         try:
-            self.valid = blob[0:10] == "CntZImage "
+            self.valid = blob[0:10] == b"CntZImage "
             assert self.valid
 
             fileVersion, imageType, self.h, self.w, self.u = (
@@ -209,16 +210,16 @@ class lerc(object):
     # assuming header, mask and offset are correct
     def read_tiles(self, blob):
         # the encoding block size
-        bh = self.h / self.v_nbY
-        bw = self.w / self.v_nbX
+        bh = self.h // self.v_nbY
+        bw = self.w // self.v_nbX
         offset = 66 + self.m_nB
         result = array.array('f', (0.0, ) * self.w * self.h)
         for x, y in dloop(range(0, self.w, bw), range(0, self.h, bh)):
-			offset = read_block(result,
-				range(x, x + min(bw, self.w - x)),
-				range(y, y + min(bh, self.h - y)),
-				self.mask, self.u, self.v_maxVal,
-				blob, offset)
+            offset = read_block(result,
+                                range(x, x + min(bw, self.w - x)),
+                                range(y, y + min(bh, self.h - y)),
+                                self.mask, self.u, self.v_maxVal,
+                                blob, offset)
         return result
 
     def decode(self, blob):
@@ -244,7 +245,7 @@ class lerc(object):
 def main():
     # world.lerc contains the world elevation in WebMercator 257x257
     # with a 1 value NoData border
-    blob = open("world.lerc", "rb").read()
+    blob = open("../../../testData/world.lerc1", "rb").read()
     codec = lerc(blob)
     data = codec.decode(blob)
 
@@ -252,7 +253,7 @@ def main():
     assert codec.valid
     assert codec.mask.at(0,0) == 0 and codec.mask.at(1, 1) == 1
     assert data[74 * codec.w + 74] == 111.0
-    print  codec
+    print(codec)
 
 ##    for row in range(info.height): # Write data as CSV
 ##        print ",".join(`data[row * info.width + column]`
