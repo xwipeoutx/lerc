@@ -94,20 +94,19 @@ def read_qval(blob, offset):
 
     # Decode the integer array, values are always positive
     values = array.array("I", (0,)* count)
-    src = 0
     bits_left = 32
     mask = (1 << nbits) -1
+    src = iter(values32)
+    v = next(src)
     for dst in range(count):
         if bits_left >= nbits:
-            values[dst] = mask & (values32[src] >> (bits_left - nbits))
+            values[dst] = mask & (v >> (bits_left - nbits))
             bits_left -= nbits
         else: # Not enough bits left in this input integer
-            pbits = nbits - bits_left
-            values[dst] = (values32[src] & ((1 << bits_left) -1)) << pbits
-            src += 1
-            bits_left = 32 - pbits
-            values[dst] += values32[src] >> bits_left
-
+            vtmp = mask & (v << (nbits - bits_left))
+            v = next(src)
+            bits_left += 32 - nbits
+            values[dst] = vtmp + (v >> bits_left)
     return values, offset
 
 # Single block read/expand, returns the end offset
@@ -142,11 +141,10 @@ def read_block(data, rx, ry, mask, Q, max_val, blob, offset):
 
     # Unpack from integers, based on mask
     ival, offset = read_qval(blob, offset)
-    src = 0
+    src = iter(ival)
     for x, y in dloop(rx, ry):
         if mask.at(x, y) != 0:
-            data[y * mask.w + x] = min(mval + Q * ival[src], max_val)
-            src += 1
+            data[y * mask.w + x] = min(mval + Q * next(src), max_val)
     return offset
 
 #bitmask in row major, most significant bit first
