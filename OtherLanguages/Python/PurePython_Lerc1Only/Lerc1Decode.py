@@ -69,7 +69,8 @@ def read_qval(blob, offset):
     offset += 1
     bc = nbits >> 6
     nbits &= 63
-    if nbits == 0:  # There are no values, return the offset only
+    assert(nbits < 32)
+    if nbits == 0:  # There are no values
         return None, offset
 
     count, = struct.unpack_from(("<I", "<H", "B")[bc], blob, offset)
@@ -94,25 +95,25 @@ def read_qval(blob, offset):
 
     # Decode the integer array, values are always positive
     values = array.array("I", (0,)* count)
-    bits_left = 32
     mask = (1 << nbits) -1
     src = iter(values32)
     v = next(src)
+    bits_left = 32
     for dst in range(count):
-        if bits_left >= nbits:
-            values[dst] = mask & (v >> (bits_left - nbits))
-            bits_left -= nbits
+        bits_left -= nbits
+        if bits_left >= 0:
+            values[dst] = mask & (v >> bits_left)
         else: # Not enough bits left in this input integer
-            vtmp = mask & (v << (nbits - bits_left))
+            vtmp = mask & (v << -bits_left)
             v = next(src)
-            bits_left += 32 - nbits
+            bits_left += 32
             values[dst] = vtmp + (v >> bits_left)
     return values, offset
 
 # Single block read/expand, returns the end offset
 def read_block(data, rx, ry, mask, Q, max_val, blob, offset):
     '''Decode a lerc block into the data array'''
-    flags, = struct.unpack_from('B', blob, offset)
+    flags, = struct.unpack_from("B", blob, offset)
     offset += 1
     mf = flags >> 6  # Format of minimum
     flags &= 63
